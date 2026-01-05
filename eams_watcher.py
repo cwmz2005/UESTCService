@@ -1,5 +1,6 @@
 """UESTC 成绩监控应用"""
 
+import hashlib
 import json
 import urllib.parse
 from typing import List, Set, Dict, Optional
@@ -22,7 +23,7 @@ class EamsWatcherApp(Application):
         """
         super().__init__("EamsWatcher", account)
         self.history_file = history_file or self.HISTORY_FILE
-        self.sent_courses: Set[str] = self._load_sent_courses()
+        self.sent_grades: Set[str] = self._load_sent_grades()
     
     def _get_bearer_token(self) -> Optional[str]:
         """获取 EAMS API 的 Bearer Token
@@ -82,11 +83,28 @@ class EamsWatcherApp(Application):
             self.log_error(f"请求成绩 API 失败: {e}")
             return []
     
-    def _load_sent_courses(self) -> Set[str]:
-        """从历史文件中加载已发送的课程代码
+    def _generate_grade_checksum(self, grade: Dict) -> str:
+        """生成成绩记录的校验值
+        
+        基于课程编码、学生代码、学期和成绩计算唯一校验值
+        
+        Args:
+            grade: 成绩字典
+            
+        Returns:
+            校验值字符串
+        """
+        checksum_str = f"{grade.get('courseCode', '')}" \
+                      f"_{grade.get('studentCode', '')}" \
+                      f"_{grade.get('semester', '')}" \
+                      f"_{grade.get('score', '')}"
+        return hashlib.md5(checksum_str.encode()).hexdigest()
+    
+    def _load_sent_grades(self) -> Set[str]:
+        """从历史文件中加载已发送的成绩校验值
         
         Returns:
-            已发送课程代码的集合
+            已发送成绩校验值的集合
         """
         import os
         if not os.path.exists(self.history_file):
@@ -99,11 +117,11 @@ class EamsWatcherApp(Application):
             self.log_warning(f"读取历史文件失败: {e}")
             return set()
     
-    def _save_sent_courses(self) -> None:
-        """保存已发送的课程代码到历史文件"""
+    def _save_sent_grades(self) -> None:
+        """保存已发送的成绩校验值到历史文件"""
         try:
             with open(self.history_file, "w", encoding="utf-8") as f:
-                json.dump(list(self.sent_courses), f, ensure_ascii=False, indent=2)
+                json.dump(list(self.sent_grades), f, ensure_ascii=False, indent=2)
         except Exception as e:
             self.log_error(f"保存历史文件失败: {e}")
     
@@ -120,10 +138,18 @@ class EamsWatcherApp(Application):
         for grade in new_grades:
             course_name = grade.get("courseName", "未知课程")
             score = grade.get("score", "未出分")
-            gpa = grade.get("gpa", "N/A")
-            lines.append(f"- {course_name}: {score} (GPA: {gpa})")
+            gp = grade.get("gp", "N/A")
+            credits = grade.get("credits", "N/A")
+            passed = "通过" if grade.get("passed") else "未通过"
+            qm_score = grade.get("qmScore", "N/A")
+            ps_score = grade.get("psScore", "N/A")
+            
+            lines.append(f"\n课程：{course_name}")
+            lines.append(f"  总成绩：{score} | GPA：{gp}")
+            lines.append(f"  学分：{credits} | 通过状态：{passed}")
+            lines.append(f"  期末成绩：{qm_score} | 平时成绩：{ps_score}")
         
-        lines.append("\n此为系统自动提醒邮件，请勿回复。")
+        lines.append("\n\n此为系统自动提醒邮件，请勿回复。")
         return "\n".join(lines)
     
     def run(self) -> bool:
@@ -142,10 +168,10 @@ class EamsWatcherApp(Application):
         # 识别新成绩
         new_grades = []
         for grade in grades:
-            course_code = grade.get("courseName", "")
-            if course_code and course_code not in self.sent_courses:
+            grade_checksum = self._generate_grade_checksum(grade)
+            if grade_checksum not in self.sent_grades:
                 new_grades.append(grade)
-                self.sent_courses.add(course_code)
+                self.sent_grades.add(grade_checksum)
         
         if new_grades:
             self.log_info(f"发现 {len(new_grades)} 个新成绩")
@@ -153,13 +179,13 @@ class EamsWatcherApp(Application):
             content = self._build_email_content(new_grades)
             
             if self.send_email(subject, content):
-                self._save_sent_courses()
+                self._save_sent_grades()
                 self.log_success("成绩提醒已发送")
                 return True
             else:
                 self.log_error("成绩提醒发送失败")
                 # 发送失败时不更新历史记录，下次重试
-                self.sent_courses = self._load_sent_courses()
+                self.sent_grades = self._load_sent_grades()
                 return False
         else:
             self.log_info("暂无新成绩")

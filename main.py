@@ -38,11 +38,11 @@ def main():
             print("❌ 账户登录失败，退出程序")
             return 1
         
-        # 第二步：立即执行一次所有应用
-        print("\n" + "=" * 60)
-        print("初始化：立即执行一次所有应用...")
-        print("=" * 60)
-        success_count = system.run_all_applications()
+        # # 第二步：立即执行一次所有应用（重复了）
+        # print("\n" + "=" * 60)
+        # print("初始化：立即执行一次所有应用...")
+        # print("=" * 60)
+        # success_count = system.run_all_applications()
         
         # 第三步：启动定时调度器（异步模式）
         print("\n" + "=" * 60)
