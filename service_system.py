@@ -40,6 +40,14 @@ class UESTCServiceSystem:
         )
         self.operation_manager.register_operation("email", email_op)
         
+        # 配置日志告警处理器
+        self.logger.set_error_alert_handler(
+            lambda subject, content: self.operation_manager.send_email(subject, content)
+        )
+        self.logger.set_warning_alert_handler(
+            lambda subject, content: self.operation_manager.send_email(subject, content)
+        )
+        
         # 应用层：注册的应用列表
         self.applications: List[Application] = []
         

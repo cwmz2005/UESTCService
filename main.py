@@ -29,8 +29,8 @@ def main():
         print("\n配置定时策略...")
         # ElecWatcher：每 30 分钟检查一次电费
         system.set_app_schedule("ElecWatcher", IntervalPolicy(30 * 60))
-        # EamsWatcher：每 2 小时检查一次成绩
-        system.set_app_schedule("EamsWatcher", IntervalPolicy(2 * 3600))
+        # EamsWatcher：每 1 小时检查一次成绩
+        system.set_app_schedule("EamsWatcher", IntervalPolicy(1 * 3600))
         
         # 第一步：账户登录
         print("\n执行账户认证...")
