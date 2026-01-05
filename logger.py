@@ -78,7 +78,7 @@ class Logger:
         formatted_msg = f"[{timestamp}] {level_str} {msg}"
         
         # 打印到控制台
-        print(formatted_msg)
+        print(formatted_msg, flush=True)
         
         # 写入到文件
         self._write_to_file(formatted_msg)

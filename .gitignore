@@ -42,3 +42,5 @@ env/
 # 项目特定
 sent_grades.json
 *.log
+tmp
+log
