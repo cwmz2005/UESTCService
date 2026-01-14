@@ -51,8 +51,8 @@ class UESTCServiceSystem:
         # 应用层：注册的应用列表
         self.applications: List[Application] = []
         
-        # 调度层：任务调度器
-        self.scheduler = Scheduler()
+        # 调度层：任务调度器（传入重新登录的回调函数）
+        self.scheduler = Scheduler(retry_callback=self.login)
         
         # 应用定时配置：{应用名称: 定时策略}
         self.app_schedules: Dict[str, SchedulePolicy] = {}

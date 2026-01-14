@@ -105,32 +105,65 @@ class CronPolicy(SchedulePolicy):
 class ScheduledTask:
     """定时任务"""
     
-    def __init__(self, name: str, task_func: Callable[[], bool], policy: SchedulePolicy):
+    def __init__(self, name: str, task_func: Callable[[], bool], policy: SchedulePolicy, retry_callback: Optional[Callable[[], bool]] = None):
         """初始化定时任务
         
         Args:
             name: 任务名称
             task_func: 任务函数，返回 bool 表示执行是否成功
             policy: 定时策略
+            retry_callback: 失败时的重试回调函数（如重新登录）
         """
         self.name = name
         self.task_func = task_func
         self.policy = policy
+        self.retry_callback = retry_callback
         self.last_run_time: Optional[float] = None
         self.logger = get_logger()
     
     def execute(self) -> bool:
-        """执行任务
+        """执行任务，失败时尝试重试
         
         Returns:
             任务执行成功返回 True，失败返回 False
         """
         try:
             result = self.task_func()
-            self.last_run_time = time.time()
-            return result
+            if result:
+                self.last_run_time = time.time()
+                return True
+            
+            # 任务失败，尝试重试
+            if self.retry_callback:
+                self.logger.warning(f"任务 {self.name} 失败，尝试重新登录后重试...")
+                if self.retry_callback():
+                    self.logger.info(f"重新登录成功，重新执行任务 {self.name}")
+                    result = self.task_func()
+                    if result:
+                        self.last_run_time = time.time()
+                        return True
+                    else:
+                        self.logger.error(f"任务 {self.name} 重试后仍然失败")
+                else:
+                    self.logger.error(f"重新登录失败，任务 {self.name} 无法重试")
+            
+            return False
         except Exception as e:
-            self.logger.error(f"任务执行异常: {e}")
+            self.logger.error(f"任务 {self.name} 执行异常: {e}")
+            
+            # 异常时也尝试重试
+            if self.retry_callback:
+                try:
+                    self.logger.warning(f"任务 {self.name} 异常，尝试重新登录后重试...")
+                    if self.retry_callback():
+                        self.logger.info(f"重新登录成功，重新执行任务 {self.name}")
+                        result = self.task_func()
+                        if result:
+                            self.last_run_time = time.time()
+                            return True
+                except Exception as retry_e:
+                    self.logger.error(f"任务 {self.name} 重试时发生异常: {retry_e}")
+            
             return False
     
     def should_run_now(self) -> bool:
@@ -141,12 +174,17 @@ class ScheduledTask:
 class Scheduler:
     """任务调度器，管理和运行所有定时任务"""
     
-    def __init__(self):
-        """初始化调度器"""
+    def __init__(self, retry_callback: Optional[Callable[[], bool]] = None):
+        """初始化调度器
+        
+        Args:
+            retry_callback: 任务失败时的重试回调函数（如重新登录）
+        """
         self.tasks: Dict[str, ScheduledTask] = {}
         self.logger = get_logger()
         self.running = False
         self.scheduler_thread: Optional[threading.Thread] = None
+        self.retry_callback = retry_callback
     
     def add_task(self, name: str, task_func: Callable[[], bool], policy: SchedulePolicy) -> None:
         """添加定时任务
@@ -159,7 +197,7 @@ class Scheduler:
         if name in self.tasks:
             self.logger.warning(f"任务 '{name}' 已存在，将被覆盖")
         
-        task = ScheduledTask(name, task_func, policy)
+        task = ScheduledTask(name, task_func, policy, self.retry_callback)
         self.tasks[name] = task
         self.logger.info(f"已添加定时任务: {name} ({policy.get_description()})")
     
