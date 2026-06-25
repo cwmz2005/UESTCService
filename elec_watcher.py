@@ -113,12 +113,12 @@ class ElecWatcherApp(Application):
                 if self.send_email(subject, content):
                     self.log_success("电费余额提醒已发送")
                 else:
-                    self.log_error("电费余额提醒发送失败")
+                    self.log_info("电费余额提醒发送失败")
             else:
                 self.log_info(f"电费余额充足 ({syje} >= {self.threshold})")
-        
+
         except Exception as e:
-            self.log_error(f"处理用电数据异常: {e}")
+            self.log_info(f"处理用电数据异常: {e}")
     
     def _should_send_daily_failure_alert(self) -> bool:
         """判断是否应该发送每日失败告警邮件
