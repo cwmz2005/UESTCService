@@ -14,22 +14,24 @@ from scheduler import Scheduler, SchedulePolicy, IntervalPolicy
 class UESTCServiceSystem:
     """UESTC 定时服务系统核心框架"""
     
-    def __init__(self, username: str, password: str, email_config: Dict[str, str]):
+    def __init__(self, username: str, password: str, email_config: Dict[str, str], multi_factor_fingerprint: str | None = None):
         """初始化服务系统
-        
+
         Args:
             username: UESTC 用户名
             password: UESTC 密码
             email_config: 邮件配置字典，包含 'user', 'password', 'to' 键
+            multi_factor_fingerprint: 两步认证信任浏览器指纹，传 None 表示不启用
         """
         self.logger = get_logger("UESTCServiceSystem")
         self.operation_manager = get_operation_manager()
-        
+
         # 账户层：初始化共享账户
         self.account = UESTCAccount(
             username=username,
             password=password,
-            log_func=self.logger.info
+            log_func=self.logger.info,
+            multi_factor_fingerprint=multi_factor_fingerprint,
         )
         
         # 操作层：注册邮件操作
@@ -175,7 +177,8 @@ class UESTCServiceSystem:
         email_user = os.getenv('EMAIL_USER', '')
         email_pass = os.getenv('EMAIL_PASSWORD', '')
         email_to = os.getenv('EMAIL_TO', '')
-        
+        multi_factor_fingerprint = os.getenv('MULTIFACTOR_BROWSER_FINGERPRINT', '')
+
         # 验证必要配置
         missing = []
         if not username:
@@ -188,10 +191,10 @@ class UESTCServiceSystem:
             missing.append('EMAIL_PASSWORD')
         if not email_to:
             missing.append('EMAIL_TO')
-        
+
         if missing:
             raise RuntimeError(f"缺少环境变量: {', '.join(missing)}")
-        
+
         return UESTCServiceSystem(
             username=username,
             password=password,
@@ -199,5 +202,6 @@ class UESTCServiceSystem:
                 'user': email_user,
                 'password': email_pass,
                 'to': email_to
-            }
+            },
+            multi_factor_fingerprint=multi_factor_fingerprint or None,
         )

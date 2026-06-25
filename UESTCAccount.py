@@ -40,18 +40,20 @@ class UESTCAccount:
     # AES 加密字符集
     AES_CHARS = "ABCDEFGHJKMNPQRSTWXYZabcdefhijkmnprstwxyz2345678"
     
-    def __init__(self, username: str, password: str, log_func=None):
+    def __init__(self, username: str, password: str, log_func=None, multi_factor_fingerprint: str | None = None):
         """初始化 UESTC 账户。
-        
+
         Args:
             username: 用户名
             password: 密码
             log_func: 日志函数，默认为 print
+            multi_factor_fingerprint: 两步认证信任浏览器指纹，传 None 表示不启用
         """
         self.username = username
         self.password = password
         self.session = requests.Session()
         self.log = log_func or print
+        self.multi_factor_fingerprint = multi_factor_fingerprint
     
     def _random_string(self, length: int) -> str:
         """生成指定长度的随机字符串，用于 AES 加密前缀和 IV。
@@ -148,8 +150,14 @@ class UESTCAccount:
             # 获取指纹信息
             self.session.get(self.FINGERPRINT_URL)
             
-            # 更新 Cookie
-            self.session.cookies.update({'org.springframework.web.servlet.i18n.CookieLocaleResolver.LOCALE': 'zh_CN'})
+            # 更新 Cookie（包含语言偏好和两步认证信任浏览器指纹）
+            cookies_to_update = {
+                'org.springframework.web.servlet.i18n.CookieLocaleResolver.LOCALE': 'zh_CN',
+            }
+            if self.multi_factor_fingerprint:
+                cookies_to_update['MULTIFACTOR_BROWSER_FINGERPRINT'] = self.multi_factor_fingerprint
+                self.log("已设置两步认证信任浏览器指纹")
+            self.session.cookies.update(cookies_to_update)
             
             # 提交登录请求
             login_response = self.session.post(self.LOGIN_URL, data=payload)
