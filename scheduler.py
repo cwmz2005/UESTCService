@@ -122,39 +122,59 @@ class ScheduledTask:
         self.logger = get_logger()
     
     def execute(self) -> bool:
-        """执行任务，失败时尝试重试
-        
+        """执行任务，失败时尝试重试。
+
+        首次尝试时，任务内部的 error / warning 被抑制（暂存），不触发邮件：
+        - 首次成功 → 丢弃抑制告警
+        - 首次失败 → 告警保留在抑制缓冲区
+          - 重试成功 → 丢弃抑制告警（首次失败只是会话过期等可恢复问题）
+          - 重试失败 → 释放首次告警到聚合管道，同时记录重试失败
+
         Returns:
             任务执行成功返回 True，失败返回 False
         """
         try:
-            result = self.task_func()
+            # ── 首次尝试：告警抑制 ──
+            with self.logger.suppress_alerts() as suppression:
+                result = self.task_func()
+                if result:
+                    suppression.discard()  # 成功 → 丢弃所有内部 warning
+
             if result:
                 self.last_run_time = time.time()
                 return True
-            
-            # 任务失败，尝试重试
+
+            # ── 首次失败，尝试重新登录后重试 ──
             if self.retry_callback:
-                self.logger.warning(f"任务 {self.name} 失败，尝试重新登录后重试...")
+                self.logger.info(f"任务 {self.name} 失败，尝试重新登录后重试...")
                 if self.retry_callback():
                     self.logger.info(f"重新登录成功，重新执行任务 {self.name}")
+                    # 第二次尝试：不抑制，告警走正常聚合管道
                     result = self.task_func()
                     if result:
                         self.last_run_time = time.time()
+                        suppression.discard()  # 重试成功 → 丢弃首次告警
                         return True
                     else:
+                        suppression.flush(self.logger)  # 重试也失败 → 释放首次告警
                         self.logger.error(f"任务 {self.name} 重试后仍然失败")
                 else:
+                    suppression.flush(self.logger)  # 重新登录失败 → 释放首次告警
                     self.logger.error(f"重新登录失败，任务 {self.name} 无法重试")
-            
+            else:
+                # 无重试回调 → 首次告警直接释放
+                suppression.flush(self.logger)
+
             return False
+
         except Exception as e:
+            # 首次尝试抛异常（suppress_alerts 的 __exit__ 已自动 flush 首次告警）
             self.logger.error(f"任务 {self.name} 执行异常: {e}")
-            
-            # 异常时也尝试重试
+
+            # 异常后也尝试重试
             if self.retry_callback:
                 try:
-                    self.logger.warning(f"任务 {self.name} 异常，尝试重新登录后重试...")
+                    self.logger.info(f"任务 {self.name} 异常，尝试重新登录后重试...")
                     if self.retry_callback():
                         self.logger.info(f"重新登录成功，重新执行任务 {self.name}")
                         result = self.task_func()
@@ -163,7 +183,7 @@ class ScheduledTask:
                             return True
                 except Exception as retry_e:
                     self.logger.error(f"任务 {self.name} 重试时发生异常: {retry_e}")
-            
+
             return False
     
     def should_run_now(self) -> bool:
@@ -247,8 +267,11 @@ class Scheduler:
                         if task.execute():
                             self.logger.success(f"任务 {task_name} 完成")
                         else:
-                            self.logger.warning(f"任务 {task_name} 失败")
-                
+                            self.logger.info(f"任务 {task_name} 失败")
+
+                # 定期检查待发聚合告警，避免无限滞留
+                self.logger.tick()
+
                 time.sleep(check_interval)
         
         except Exception as e:
@@ -275,7 +298,7 @@ class Scheduler:
         """
         self.logger.info("开始执行所有就绪任务（同步模式）")
         success_count = 0
-        
+
         for task_name, task in self.tasks.items():
             if task.should_run_now():
                 self.logger.info(f"执行任务: {task_name}")
@@ -283,8 +306,11 @@ class Scheduler:
                     success_count += 1
                     self.logger.success(f"任务 {task_name} 完成")
                 else:
-                    self.logger.warning(f"任务 {task_name} 失败")
-        
+                    self.logger.info(f"任务 {task_name} 失败")
+
+        # 检查是否有待发聚合告警
+        self.logger.tick()
+
         return success_count
     
     def get_status(self) -> Dict[str, dict]:

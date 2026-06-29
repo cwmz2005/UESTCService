@@ -162,7 +162,7 @@ class EamsWatcherApp(Application):
         
         grades = self._fetch_grades()
         if not grades:
-            self.log_warning("未获取到成绩数据")
+            self.log_info("未获取到成绩数据")
             return False
         
         # 识别新成绩
