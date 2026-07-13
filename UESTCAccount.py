@@ -1,6 +1,8 @@
 import base64
 import random
+import socket
 import requests
+import urllib3.util.connection
 from bs4 import BeautifulSoup
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad
@@ -54,6 +56,9 @@ class UESTCAccount:
         self.session = requests.Session()
         self.log = log_func or print
         self.multi_factor_fingerprint = multi_factor_fingerprint
+
+        # 学校防火墙未将校园宽带 IPv6 加入白名单，教务系统等部分服务强制走 IPv4
+        urllib3.util.connection.allowed_gai_family = lambda: socket.AF_INET
     
     def _random_string(self, length: int) -> str:
         """生成指定长度的随机字符串，用于 AES 加密前缀和 IV。
