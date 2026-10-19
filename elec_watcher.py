@@ -59,6 +59,15 @@ class ElecWatcherApp(Application):
                 return {}
 
             response = self.account.session.get(self.power_url, timeout=10)
+            if response.status_code == 401:
+                self.log_info("请求返回 401，尝试重新登录后重试")
+                if not self.account.login():
+                    self.log_info("重新登录失败")
+                    return {}
+                if not self._refresh_session():
+                    return {}
+                response = self.account.session.get(self.power_url, timeout=10)
+
             if response.status_code != 200:
                 self.log_info(f"请求失败，状态码: {response.status_code}")
                 return {}
